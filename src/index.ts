@@ -1,6 +1,16 @@
 import type { Subscription, PermissionResponse } from 'expo-modules-core';
 
+import { requireProviderActive } from './ProviderGate';
 import IsyncBackgroundLocationModule from './IsyncBackgroundLocationModule';
+import {
+  IsyncLocationProvider,
+  useIsyncLocation,
+  useIsyncLocationStatus,
+  useGeoVallas,
+  useGeoVallaTransitions,
+  useLastLocation,
+  usePendingPointCount,
+} from './IsyncLocationProvider';
 import type {
   BackgroundLocationStatus,
   GeoPoint,
@@ -22,6 +32,19 @@ export type {
   MotionSensorState,
   StoredPoint,
 };
+export type {
+  IsyncLocationContextValue,
+  IsyncLocationProviderProps,
+} from './IsyncLocationProvider';
+export {
+  IsyncLocationProvider,
+  useIsyncLocation,
+  useIsyncLocationStatus,
+  useGeoVallas,
+  useGeoVallaTransitions,
+  useLastLocation,
+  usePendingPointCount,
+};
 
 export const BackgroundLocation = {
   /**
@@ -30,6 +53,7 @@ export const BackgroundLocation = {
    * Módulo solo Android: no hay implementación nativa para iOS.
    */
   requestPermissions(): Promise<PermissionResponse> {
+    requireProviderActive('BackgroundLocation.requestPermissions');
     return IsyncBackgroundLocationModule.requestPermissions();
   },
 
@@ -38,15 +62,18 @@ export const BackgroundLocation = {
    * Android: Foreground Service. Módulo solo Android.
    */
   start(options: LocationTrackingOptions = {}): Promise<null> {
+    requireProviderActive('BackgroundLocation.start');
     return IsyncBackgroundLocationModule.start(options);
   },
 
   /** Detiene el tracking. */
   stop(): Promise<null> {
+    requireProviderActive('BackgroundLocation.stop');
     return IsyncBackgroundLocationModule.stop();
   },
 
   getStatus(): Promise<BackgroundLocationStatus> {
+    requireProviderActive('BackgroundLocation.getStatus');
     return IsyncBackgroundLocationModule.getStatus();
   },
 
@@ -57,21 +84,25 @@ export const BackgroundLocation = {
    * GPS se descartan sin persistir.
    */
   getMotionState(): Promise<MotionSensorState> {
+    requireProviderActive('BackgroundLocation.getMotionState');
     return IsyncBackgroundLocationModule.getMotionState();
   },
 
   /** Un fix puntual, sin arrancar el tracking. */
   getCurrentLocation(): Promise<LocationEventPayload> {
+    requireProviderActive('BackgroundLocation.getCurrentLocation');
     return IsyncBackgroundLocationModule.getCurrentLocation();
   },
 
   /** Evento best-effort para UI en vivo. No es la vía de persistencia — eso es el storage nativo. */
   addLocationListener(listener: (event: LocationEventPayload) => void): Subscription {
+    requireProviderActive('BackgroundLocation.addLocationListener');
     return IsyncBackgroundLocationModule.addListener('location', listener);
   },
 
   /** Transiciones dentro/fuera de las geovallas (etapa 3). Solo fire al cruzar un borde. */
   addGeoVallasListener(listener: (event: GeoVallaEvent) => void): Subscription {
+    requireProviderActive('BackgroundLocation.addGeoVallasListener');
     return IsyncBackgroundLocationModule.addListener('geovalla', listener);
   },
 
@@ -81,6 +112,7 @@ export const BackgroundLocation = {
    * vienen en `{latitude, longitude}` listos para dibujar (rings[0] = exterior).
    */
   getGeoVallas(): Promise<GeoValla[]> {
+    requireProviderActive('BackgroundLocation.getGeoVallas');
     return IsyncBackgroundLocationModule.getGeoVallas();
   },
 
@@ -91,6 +123,7 @@ export const BackgroundLocation = {
    * momento de descarga. Resuelve con la lista recién descargada.
    */
   refreshGeoVallas(): Promise<GeoValla[]> {
+    requireProviderActive('BackgroundLocation.refreshGeoVallas');
     return IsyncBackgroundLocationModule.refreshGeoVallas();
   },
 
@@ -100,25 +133,30 @@ export const BackgroundLocation = {
    * notifier en el workerLooper — no depende de que la UI esté viva.
    */
   setGeovallaNotificationsEnabled(enabled: boolean): Promise<null> {
+    requireProviderActive('BackgroundLocation.setGeovallaNotificationsEnabled');
     return IsyncBackgroundLocationModule.setGeovallaNotificationsEnabled(enabled);
   },
 
   /** Lee el flag nativo de notificaciones de geovallas (default: true). */
   getGeovallaNotificationsEnabled(): Promise<boolean> {
+    requireProviderActive('BackgroundLocation.getGeovallaNotificationsEnabled');
     return IsyncBackgroundLocationModule.getGeovallaNotificationsEnabled();
   },
 
   /** Lee puntos pendientes del storage nativo (más antiguos primero), sin borrarlos. */
   getPendingPoints(limit = 100): Promise<StoredPoint[]> {
+    requireProviderActive('BackgroundLocation.getPendingPoints');
     return IsyncBackgroundLocationModule.getPendingPoints(limit);
   },
 
   getPendingPointsCount(): Promise<number> {
+    requireProviderActive('BackgroundLocation.getPendingPointsCount');
     return IsyncBackgroundLocationModule.getPendingPointsCount();
   },
 
   /** Borra puntos del storage nativo (uso manual/debug). */
   deletePoints(ids: number[]): Promise<null> {
+    requireProviderActive('BackgroundLocation.deletePoints');
     return IsyncBackgroundLocationModule.deletePoints(ids);
   },
 
@@ -129,11 +167,13 @@ export const BackgroundLocation = {
    * Idempotente — un único worker en cola por tag.
    */
   startBatchSync(): Promise<null> {
+    requireProviderActive('BackgroundLocation.startBatchSync');
     return IsyncBackgroundLocationModule.startBatchSync();
   },
 
   /** Cancela el drenado pendiente (debug/control). */
   stopBatchSync(): Promise<null> {
+    requireProviderActive('BackgroundLocation.stopBatchSync');
     return IsyncBackgroundLocationModule.stopBatchSync();
   },
 };

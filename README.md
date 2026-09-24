@@ -1,129 +1,408 @@
-# iSync Background Location Module
+# iSync Background Location Tracker
 
-> **Solo Android.** Es un módulo nativo Android (Foreground Service + SQLite WAL
-> + Protobuf). No soporta iOS ni web: `expo-module.config.json` lista `["android"]`.
+> **Android only.** Módulo nativo de Expo React Native para rastreo de ubicación en
+> segundo plano, optimizado para batería. **No soporta iOS ni web.**
 
-## Geovallas (Etapa 3) — `/api/geovallas`
+## Documentación
 
-API de geovallas poligonales (RFC 7946; el ciclo la resume `docs/Geovallas.md`).
-El módulo mantiene el ciclo completo en nativo, sin depender del puente JS:
+- **`docs/DEVELOPER-GUIDE.md`** — guía práctica para devs Expo/React Native:
+  instalación, integración, permisos, eventos, geovallas, cola local, checklist de
+  prueba con dev build y FAQ.
+- **`docs/ENGINEERING.md`** — notas internas de diseño e historial de refactorización.
 
-- **`GeoVallasServices.kt`** (modelo + red + detección unificados) — cliente
-  OkHttp contra `https://isync-tracker-ws.vercel.app/api/geovallas` (misma URL
-  para localdev y producción, acordado). `refresh()` baja el FeatureCollection y
-  reemplaza la cache. **Solo consume**: no hay `POST`/`create` — la escritura de
-  geovallas la hace la techweb. Incluye el modelo (`GeoValla`/`GeoPoint`), el
-  parseo de la respuesta (`[lng, lat]` → lat/lng) y el point-in-polygon por ray
-  casting.
-- **Tabla `geovallas` en `isync_tracking.db`** (`TrackingDatabase`, v4) —
-  cache durable: sobrevive al kill del proceso y a un arranque sin red
-  (`boot()` la carga a memoria al arrancar el Service).
-- **Detección** — cada fix aceptado por el pipeline de captura se evalúa en el
-  `workerLooper` contra las geovallas activas; al cruzar un borde se emite el
-  evento `geovalla` (`inside: true/false`) hacia JS. El primer fix solo reporta
-  enter (la UI aprende el estado inicial sin spamear exits).
-- **Notificación de entrada (background)** — el `GeovallaNotifier` (vive en
-  el mismo `GeoVallasServices.kt`) postea una
-  notificación heads-up al **entrar** en una geovalla: canal `geovalla_events`
-  (importancia alta) cuyo sonido es `res/raw/location.mp3` (el mismo
-  `assets/sound/location.mp3`, copiado al res del módulo para que suene sin JS).
-  Es **opcional** desde JS (`setGeovallaNotificationsEnabled`, flag
-  `geovalla_notifications` en SharedPreferences; el evento `geovalla` a JS
-  nunca se silencia).
-  Todo corre en el `workerLooper` del Service, en segundo plano.
-- **Carga única al arrancar** — el FeatureCollection se baja **una vez** con el
-  `refresh()` al arrancar el Service (no hay refresco periódico: se eliminó el
-  del mantenimiento). El JS solo lee la cache (`getGeoVallas()`) desde
-  `tracking.tsx` / `settingsHost.tsx`; `refreshGeoVallas`/`createGeoValla` se
-  eliminaron (no se usaban: el consumo es interno al nativo).
+`isync-background-tracker` combina almacenamiento local en SQLite (con WAL),
+transmisión por Protocol Buffers y un motor de geovallas en segundo plano. Todo el
+pipeline corre en nativo (un `ForegroundService`), sin depender del puente JS: la app
+puede estar cerrada (o el proceso muerto) y el tracking sigue funcionando.
 
-## Historial de Refactorización y Optimización Crítica (Sep 2026)
+---
 
-### Consolidación de geovallas (Sep 2026)
-`GeoVallas.kt` (modelo/parseo) y `GeoVallasService.kt` (red/detección) se
-fusionaron en un único `GeoVallasServices.kt` por pedido explícito: mismo
-package, cero imports entre ellos, la separación no aportaba. API pública y
-ciclo de vida intactos.
+## Características
 
-### Modo solo-consulta de geovallas (Sep 2026)
-Por pedido explícito se quitó toda escritura: `create()` (POST, nativo),
-`createGeoValla` y `refreshGeoVallas` (superficie JS + AsyncFunctions) y los
-items debug de `settingsHost.tsx` que las usaban. Queda el ciclo
-`GET /api/geovallas` → tabla `geovallas` (start + mantenimiento) + lectura de
-cache (`getGeoVallas`) + detección/evento. Al no haber más POST, `parseCreateId`,
-`RequestBody` y `MediaType` se eliminaron del archivo.
+- **Tracking en segundo plano de alto rendimiento** — `ForegroundService` Android con
+  `foregroundServiceType="location"`, arranque automático tras `BOOT_COMPLETED`.
+- **Ahorro extremo de batería** — sensor de hardware `TYPE_SIGNIFICANT_MOTION`
+  (Sensor Hub) + "GPS Espía" para confirmar viajes; el CPU duerme entre fixes.
+- **Persistencia durable** — SQLite `isync_tracking.db` con `wal`, tablas
+  `location_points` y `geovallas`.
+- **Doble canal de red**:
+  - *Realtime* — socket.io (websocket) vía protobuf binario.
+  - *Batch durable* — `POST /gps/batch` con WorkManager (reintentos + sobrevive al
+    kill del proceso y al reboot).
+- **Geovallas poligonales** — descarga del servidor, caché local, detección
+  entrada/salida y notificación heads-up al entrar.
+- **`requestPermissions()` en dos pasos** — FINE + COARSE + notificaciones +
+  Activity Recognition, y ascenso a background location (Android 11+).
 
-### Notificación de entrada a geovallas (Sep 2026)
-Al detectar una entrada (`evaluate()` en el workerLooper) se postea además una
-notificación nativa vía el `GeovallaNotifier` (fusionado en `GeoVallasServices.kt`):
-canal `geovalla_events`
-(IMPORTANCE_HIGH) con sonido `res/raw/location.mp3` (copia del
-`assets/sound/location.mp3`), PendingIntent que abre la app, vibrate y
-`POST_NOTIFICATIONS`/`VIBRATE` agregados al manifest del módulo. `requestPermissions`
-ya pedía `POST_NOTIFICATIONS`, no hizo falta cambiarlo.
+---
 
-### Notifier + Servicios fusionados (Sep 2026)
-`GeovallaNotifier.kt` se fusionó dentro de `GeoVallasServices.kt` (un solo
-archivo con el modelo, la red, la detección y las notificaciones), por pedido
-explícito — mismo package, un solo referente de la etapa 3.
+## Instalación
 
-### Notificaciones de geovalla opcionales desde JS (Sep 2026)
-`setGeovallaNotificationsEnabled`/`getGeovallaNotificationsEnabled` en la
-superficie JS escriben/leen `geovalla_notifications` (SharedPreferences,
-default `true`). El notifier consulta el flag antes de postear; el evento
-`geovalla` hacia JS no cambia.
+```bash
+npm install isync-background-tracker
+# o de forma local, para desarrollo:
+npm install D:\isync-background-tracker
+```
 
-### Baja de la geovalla de reposo (Sep 2026)
-Se **eliminó el geofence circular de reposo** (`GeofencingClient`,
-`GeofenceTransitionReceiver`, toggle `stationaryGeofenceEnabled`, superficie JS
-`getStationaryGeofence`/`setStationaryGeofence`) porque no se usaba en
-producción. El reposo sigue igual (IMU + ancla + Activity Recognition + GPS
-Espía); lo que se perdió es el wake por broadcast **con proceso muerto** (ahora
-solo IMM lo cubre). Especificación de pies a cabeza para reimplementarla a
-futuro: **`docs/geovalla-reposo-removida.md`**.
+Requiere `expo-modules-core` (`~1.12.0` como dependency) y apps con autolinking de
+Expo Modules (Expo SDK 50+, React Native con el plugin de autolinking de Gradle).
 
-### El Problema de Sobrecalentamiento y Consumo de Batería (Ataque DDoS Interno)
-Anteriormente, la aplicación registraba métricas insostenibles en producción:
-- **Tiempo de CPU:** ~8 horas y 21 minutos (en un lapso de 14 horas).
-- **Tráfico Wi-Fi:** ~32,687,932 paquetes enviados.
-- **Activaciones Injustificadas (Falsos Positivos):** 48 activaciones del GPS.
-- **Líneas Rectas en el Mapa:** Puntos de rastreo tardíos que atravesaban propiedades privadas después de abandonar la geovalla.
+> Es un módulo nativo puro: para probarlo necesitas un **dev build** (`npx expo run:android`),
+> no sirve Expo Go.
 
-#### Causa Raíz
-1. **Bucle Infinito de Reconexión (DDoS):** En `LocationRelay.kt`, se utilizaba `ConnectivityManager.NetworkCallback` para forzar la reconexión manual de Socket.io. Al destruir y recrear el socket repetidamente dentro del callback `onAvailable`, el sistema operativo generaba una cascada infinita de llamadas asíncronas, resultando en millones de paquetes intentando hacer el handshake del WebSocket y sobrecargando la CPU.
-2. **Alta Precisión en Reposo:** El GPS solicitaba ubicación cada 2 segundos (`interval = 2000`) sin apagarse inmediatamente después de falsos positivos de movimiento (por ejemplo, mover el teléfono en la mesa requería esperar 5 minutos para que el GPS se durmiera).
-3. **Destrucción Prematura de Geovalla:** El sistema destruía la geovalla basándose puramente en 15 segundos de datos del acelerómetro crudo, enviando un punto artificial en la posición de parqueo, e iniciando el GPS tarde, resultando en rutas cortadas.
+## Configuración de la app
 
-### Soluciones Implementadas
+No hace falta configurar nada en el manifiesto: las `uses-permission`, el `<service>`
+y los `<receiver>` viajan en el `AndroidManifest.xml` del propio módulo y se
+fusionan al build de la app.
 
-#### 1. Eliminación del NetworkCallback (Gestión Nativa de Socket.io)
-Se eliminó por completo el uso de `ConnectivityManager.NetworkCallback` en `LocationRelay.kt`. 
-**Lección aprendida:** La librería `socket.io-client` maneja sus propias políticas de reconexión automática (`reconnection = true`, `reconnectionDelay`, etc.) de forma óptima en el hilo de red. Forzar una conexión de forma manual e interceptar eventos de red del sistema choca con el ciclo de vida del socket y causa bucles infinitos.
+## Permisos
 
-#### 2. Lógica de Rastreo Tentativo ("GPS Espía")
-Para solucionar la línea recta y los falsos positivos:
-- Ahora, con solo 5 segundos de movimiento (`armMovementConfirmTimer`), el GPS se enciende en modo "Tentativo". **El reposo NO se cancela**.
-- Al recibir puntos de GPS, se mide la distancia respecto al "ancla" de parqueo.
-- **Si distancia > 25m:** Se confirma el desplazamiento y se inicia el tracking oficial exacto desde la salida del estacionamiento.
-- **Si distancia < 25m (falso positivo):** Al detenerse el movimiento, el GPS se apaga **inmediatamente**, ahorrando los 5 minutos de batería que se gastaban antes.
+```ts
+const result = await BackgroundLocation.requestPermissions();
+```
 
-#### 3. Optimización del Intervalo del GPS
-Se incrementó el `interval` base de la petición de `FusedLocationProviderClient` de 2000ms a **5000ms**. Esta cadencia de 5 segundos es el balance perfecto para capturar curvas cerradas sin mantener la antena GPS al 100% de potencia constante.
+Pide, en orden:
 
-#### 4. Uso Abusivo de Sensores de Hardware y Falta de "Batching"
-El detector de movimiento mantenía el **Acelerómetro, Giroscopio y Magnetómetro** encendidos 24/7 sin latencia de reporte.
-- **Solución:** Se eliminó el registro del giroscopio y magnetómetro (innecesarios para detectar si el usuario camina o maneja, el acelerómetro basta). 
-- **Deep Sleep:** Se configuró un `maxReportLatencyUs` de 2,000,000 (2 segundos) en el acelerómetro. Esto permite al procesador (CPU) del teléfono entrar en Deep Sleep y solo despertar 1 vez cada 2 segundos para procesar los movimientos en bloque, en lugar de despertar 5 veces por segundo ininterrumpidamente.
+1. `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, `POST_NOTIFICATIONS` y
+   `ACTIVITY_RECOGNITION` (Android 10+).
+2. Si el usuario concedió los anteriores en Android 10+, se pide
+   `ACCESS_BACKGROUND_LOCATION` en un segundo diálogo (obligatorio para el tracking
+   con la app en segundo plano).
 
-#### 5. Migración a Arquitectura 100% Basada en Eventos (Significant Motion)
-Se reemplazó completamente el acelerómetro continuo por `Sensor.TYPE_SIGNIFICANT_MOTION` (`TriggerEventListener`), que corre en el Sensor Hub (microprocesador dedicado de microamperios).
-- **CPU en reposo = 0% de uso:** El procesador principal duerme por completo hasta que el hardware detecta movimiento real.
-- **Evento único por disparo:** El sensor se desactiva solo tras dispararse. Se re-arma manualmente tras cada decisión.
-- **El GPS es el árbitro (sin timers):** Tras el disparo del sensor, el GPS Espía se enciende. Cada punto GPS evalúa velocidad y distancia vs. el ancla: `distancia > 25m` → viaje real (salir del reposo); `speed < 1.5 m/s` dentro del radio → falso positivo (apagar GPS, re-armar sensor). No se usa ningún timer para esta decisión.
-- **Fallback automático:** Si el hardware del dispositivo no soporta `TYPE_SIGNIFICANT_MOTION`, el sistema usa `ActivityRecognition` de Google como disparador alternativo sin interrumpir el servicio (solo con el proceso vivo; con el proceso muerto nada lo despierta sin IMM — ver `docs/geovalla-reposo-removida.md`).
-- **`motionGatePasses()` refactorizado:** Ahora usa exclusivamente la velocidad del GPS (`location.speed`) como criterio. Se eliminó la dependencia del acelerómetro en el filtrado de puntos.
+Devuelve un `PermissionResponse` de `expo-modules-core`. Para tracking en background
+el usuario debe aceptar también **"Permitir todo el tiempo"** en los ajustes del
+sistema.
 
-#### 6. Corrección del Umbral de Velocidad GPS (Bug Post-Refactorización)
-Al eliminar el acelerómetro del `motionGatePasses()`, el umbral de `1.5 m/s` (5.4 km/h) quedó como único criterio de movimiento. La velocidad típica caminando es `1.0 a 1.4 m/s` (3.6 a 5 km/h), por lo que **todos los puntos generados caminando eran descartados silenciosamente**.
-- **Solución:** Se bajó `GPS_MOTION_THRESHOLD_MPS` de `1.5f` a **`0.5f`** (1.8 km/h). El GPS drift (jitter con el teléfono inmóvil) reporta velocidades de `0.0 a 0.3 m/s`; caminar reporta `1.0+`. El nuevo umbral filtra el drift pero permite todas las formas de desplazamiento humano.
-- **Lección:** Al eliminar un sensor que servía como "bypass" de un gate, revisar TODOS los umbrales que dependían de ese bypass.
+---
+
+## Uso rápido
+
+> ### Requisito: el Provider es obligatorio
+> **Ninguna** función del módulo (`BackgroundLocation.*`, hooks o listeners)
+> funciona si la app no está envuelta en `<IsyncLocationProvider>`. Si un archivo
+> intenta llamar al módulo sin el Provider montado, lanza un `Error` indicando que
+> envuelvas la app. Envuelve la raíz de tu app (ver "Uso con Provider" más abajo):
+
+```tsx
+export default function App() {
+  return (
+    <IsyncLocationProvider>
+      <Root />
+    </IsyncLocationProvider>
+  );
+}
+```
+
+Dentro de ese árbol, la API imperativa queda disponible:
+
+```tsx
+import { BackgroundLocation } from 'isync-background-tracker';
+
+// 1. Permisos
+await BackgroundLocation.requestPermissions();
+
+// 2. Listeners (UI en vivo; la persistencia es nativa y no depende de esto)
+const subLoc = BackgroundLocation.addLocationListener((point) =>
+  console.log('fix:', point),
+);
+const subGeo = BackgroundLocation.addGeoVallasListener((event) =>
+  console.log('geovalla:', event),
+);
+
+// 3. Arrancar el servicio
+await BackgroundLocation.start({
+  interval: 5000,          // ms entre fixes (default 5000)
+  distanceInterval: 1,     // desplazamiento mínimo en m (default 1)
+  deviceCode: 'AGRS-01',   // código de vendedor/vehículo
+  deviceName: 'Camioneta 05',
+  movementConfirmMs: 15000, // confirmación de movimiento antes de reactivar GPS
+});
+
+// 4. Con el GPS del dispositivo en alta precisión, camina: cada ~5 s llega un fix.
+
+// 5. Detener
+await BackgroundLocation.stop();
+```
+
+---
+
+## Uso con Provider (React Context)
+
+Para que "todo funcione solo", envuelve tu app con `IsyncLocationProvider`:
+pide permisos, arranca el tracking y suscribe los eventos por ti al montarse.
+
+```tsx
+import {
+  IsyncLocationProvider,
+  useIsyncLocation,
+  useLastLocation,
+  useGeoVallas,
+  usePendingPointCount,
+} from 'isync-background-tracker';
+
+function TrackingScreen() {
+  const { isRunning, start, stop, geovallaTransitions, error } = useIsyncLocation();
+  const last = useLastLocation();          // último fix aceptado
+  const geovallas = useGeoVallas();        // cache local
+  const pending = usePendingPointCount();  // cola sin subir
+
+  return (
+    <>
+      {error && <Text>Error: {error.message}</Text>}
+      <Text>{isRunning ? 'ACTIVO' : 'detenido'} · pendientes: {pending}</Text>
+      <Button title={isRunning ? 'Detener' : 'Iniciar'} onPress={() => (isRunning ? stop() : start())} />
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <IsyncLocationProvider options={{ interval: 5000, deviceCode: 'TU-CODIGO' }}>
+      <TrackingScreen />
+    </IsyncLocationProvider>
+  );
+}
+```
+
+Opciones del Provider:
+
+| Prop | Default | Descripción |
+| --- | --- | --- |
+| `children` | — | Nodos a renderizar dentro del contexto. |
+| `options` | `{}` | Opciones aplicadas a `start()` (autoStart). |
+| `autoStart` | `true` | Pide permisos y arranca solo al montar. `false` para gatear detrás de un onboarding (`start()`/`requestPermissions()` manual desde el hook). |
+| `pollIntervalMs` | `10000` | Refresco de contadores (`pendingCount`, `motionState`). `0` lo desactiva. |
+| `onLocation` | — | Callback por fix (equivalente a `addLocationListener`). |
+| `onGeoValla` | — | Callback por transición (equivalente a `addGeoVallasListener`). |
+| `onStatusChange` | — | Callback cuando cambia `isRunning`. |
+| `onError` | — | Callback ante cualquier error del módulo. |
+
+Hooks disponibles:
+
+- `useIsyncLocation()` — todo el contexto: estado + acciones (`start`, `stop`,
+  `refreshGeoVallas`, `syncNow`, `setGeovallaNotificationsEnabled`, `deletePoints`…).
+- `useIsyncLocationStatus()` — `{ available, isRunning }`.
+- `useLastLocation()` — `LocationEventPayload | null`.
+- `useGeoVallas()` — `GeoValla[]`.
+- `useGeoVallaTransitions()` — `GeoVallaEvent[]` (recientes, cap 50).
+- `usePendingPointCount()` — `number`.
+
+> Nota: el Provider **no detiene** el tracking al desmontarse — es un servicio de
+> segundo plano: `stop()` es siempre explícito.
+
+---
+
+## API
+
+> El paquete exporta un objeto único `BackgroundLocation`. Todas sus funciones
+> **exigen** que la app esté envuelta en `<IsyncLocationProvider>` (activo mientras
+> está montado); sin él lanzan un `Error`. Los hooks requieren el Provider por ser
+> Context.
+
+### `requestPermissions(): Promise<PermissionResponse>`
+Pide permisos de ubicación (FINE + COARSE + Background), notificaciones y Activity
+Recognition. Ver [Permisos](#permisos).
+
+### `start(options?: LocationTrackingOptions): Promise<null>`
+Arranca el `ForegroundService`. No lanza error si ya está corriendo (reinicia la
+configuración con las opciones dadas). Opciones:
+
+| Campo | Tipo | Default | Descripción |
+| --- | --- | --- | --- |
+| `interval` | `number` | `5000` | Intervalo objetivo entre fixes, en ms. |
+| `distanceInterval` | `number` | `1` | Desplazamiento mínimo entre fixes, en metros (piso espacial: 2 m). |
+| `deviceCode` | `string` | `''` | Código del vendedor/vehículo (el deviceId real se toma del Android ID). |
+| `deviceName` | `string` | `''` | Nombre descriptivo del dispositivo. |
+| `movementConfirmMs` | `number` | `15000` | Tiempo de confirmación del wake por sensores antes de reactivar el GPS (solo Android; más bajo = despierta más agresivo). |
+
+### `stop(): Promise<null>`
+Detiene el rastreo, cierra el relay de socket.io, cancela el sensor y guarda el
+estado estacionario.
+
+### `getStatus(): Promise<BackgroundLocationStatus>`
+```ts
+{ available: boolean; isRunning: boolean }
+```
+`available` es siempre `true` en Android. `isRunning` indica si la captura está activa.
+
+### `getCurrentLocation(): Promise<LocationEventPayload>`
+Un fix puntual de alta precisión bajo demanda, sin arrancar el tracking.
+
+### `getMotionState(): Promise<MotionSensorState>`
+Estado del detector de movimiento (Significant Motion):
+```ts
+{ registered: boolean; moving: boolean; accelMagnitude: number; gyroMagnitude: number; magDelta: number }
+```
+`accelMagnitude`/`gyroMagnitude`/`magDelta` son siempre `0`: el diseño usa solo el
+sensor de movimiento significativo por hardware (no hay acelerómetro/giroscopio/
+magnetómetro continuos — ver `docs/ENGINEERING.md`).
+
+### `addLocationListener(listener): Subscription`
+Evento `location` para cada fix aceptado por el pipeline (best-effort para la UI; la
+persistencia es nativa). Devuelve un `Subscription` de `expo-modules-core` (llamar
+`.remove()` para desuscribirse).
+
+### `addGeoVallasListener(listener): Subscription`
+Evento `geovalla` al **cruzar** un borde de geovalla (`inside: true` al entrar,
+`false` al salir). Solo se emite en transiciones, no es spam.
+
+### `getGeoVallas(): Promise<GeoValla[]>`
+Lee la caché local de la tabla `geovallas`. Los `rings` vienen como
+`GeoPoint[][]` (`{latitude, longitude}`) listos para dibujar; `rings[0]` es el
+exterior.
+
+### `refreshGeoVallas(): Promise<GeoValla[]>`
+Descarga de nuevo el FeatureCollection de `/api/geovallas` y reemplaza caché en
+memoria + tabla SQLite. Resuelve con la lista recién descargada.
+
+### `setGeovallaNotificationsEnabled(enabled: boolean): Promise<null>` / `getGeovallaNotificationsEnabled(): Promise<boolean>`
+Activa/desactiva la notificación heads-up al **entrar** en una geovalla
+(persistido como `geovalla_notifications`, default `true`). El evento `geovalla` a
+JS nunca se silencia.
+
+### `getPendingPoints(limit = 100): Promise<StoredPoint[]>` / `getPendingPointsCount(): Promise<number>` / `deletePoints(ids: number[]): Promise<null>`
+Gestión directa de la cola local (`location_points`). Los puntos vienen ordenados
+por `timestamp` ASC, con `sincronizado` (0/1) e `intentos`.
+
+### `startBatchSync(): Promise<null>` / `stopBatchSync(): Promise<null>`
+Reanuda/cancela el drenado durable de pendientes → `POST /gps/batch` vía WorkManager.
+Idempotente (trabajo único por tag). `stopBatchSync` cancela tanto el one-shot como
+el periódico.
+
+---
+
+## Tipos
+
+```ts
+export type LocationEventPayload = {
+  latitude: number; longitude: number; accuracy: number;
+  altitude: number; speed: number; heading: number; timestamp: number;
+};
+
+export type GeoPoint = { latitude: number; longitude: number };
+
+export type GeoValla = {
+  id: number; nombre: string; descripcion: string | null; tipo: string | null;
+  activo: boolean; rings: GeoPoint[][]; geojson: string | null; updated: number;
+};
+
+export type GeoVallaEvent = {
+  id: number; nombre: string; tipo: string | null; activo: boolean;
+  inside: boolean; latitude: number; longitude: number; timestamp: number;
+};
+
+export type BackgroundLocationStatus = { available: boolean; isRunning: boolean };
+
+export type LocationTrackingOptions = {
+  interval?: number; distanceInterval?: number; deviceCode?: string;
+  deviceName?: string; movementConfirmMs?: number;
+};
+
+export type MotionSensorState = {
+  registered: boolean; moving: boolean; accelMagnitude: number;
+  gyroMagnitude: number; magDelta: number;
+};
+
+export type StoredPoint = {
+  id: number; clientUuid: string; latitude: number; longitude: number;
+  altitude: number | null; speed: number | null; accuracy: number | null;
+  heading: number | null; timestamp: number;
+  sincronizado?: number; intentos?: number;
+};
+```
+
+---
+
+## Cómo funciona por dentro
+
+### Pipeline de captura
+`FusedLocationProvider` (alta precisión) → filtros (precisión ≤ 20 m, velocidad
+máxima 55 m/s, gate de movimiento 0.5 m/s, distancia elástica) → filtro Kalman →
+persistencia en SQLite + relay realtime + evaluación de geovallas + evento a JS.
+
+### Filtros y optimización de batería
+- **Significant Motion (hardware)** — `TYPE_SIGNIFICANT_MOTION` en el Sensor Hub
+  (microamperios). El CPU duerme al 100% hasta que el hardware detecta movimiento.
+- **GPS Espía** — al disparar el sensor se enciende el GPS en modo tentativo; el GPS
+  es el árbitro: cruzó ~25 m del ancla de parqueo = viaje real; sin cruzar en 30 s o
+  velocidad < 0.5 m/s = falso positivo → borra el registro, apaga GPS y rearma sensor.
+- **Fallback** — si el hardware no soporta Significant Motion, se usa
+  ActivityRecognition como disparador (solo con el proceso vivo).
+- **`movementConfirmMs`** separa movimiento sostenido de un impulso (p. ej. levantar
+  el teléfono de la mesa).
+
+### Almacenamiento
+SQLite `isync_tracking.db` con `PRAGMA journal_mode=WAL`. Tablas:
+- `location_points` — cola pendiente con `clientUuid` (idempotencia), `sincronizado`
+  e `intentos`. Mantenimiento: purge a 100 K registros / 7 días.
+- `geovallas` — caché de geovallas (autoritativa, `id DESC`, máx. 500).
+
+### Red
+- **Realtime** — socket.io (websocket) hacia `https://alfayomega.isynchn.com`, evento
+  `join` + `location` (protobuf binario). Reconexión propia del cliente (sin
+  `NetworkCallback` — ver `docs/ENGINEERING.md`).
+- **Batch** — `POST https://isync-tracker-ws.vercel.app/gps/batch` con
+  `Content-Type: application/x-protobuf` y headers `X-Device-Id`/`X-Device-Code`/
+  `X-Device-Name`. Lotes de 50, orden `timestamp ASC`. WorkManager: one-shot con
+  backoff exponencial (30 s, máx. 5 intentos) + periódico cada 10 min. Solo se
+  reintentan `429/5xx/red`; `400/401/422` son fatales (no martillan). Un `200` cuenta
+  como aceptado y borra el punto de la cola.
+
+### Geovallas
+- Fuente: `GET https://isync-tracker-ws.vercel.app/api/geovallas` (FeatureCollection
+  RFC 7946; `[lng, lat]` → convertido a `{latitude, longitude}`).
+- Se baja **una vez** al arrancar el Service (y con `refreshGeoVallas()`); no hay
+  refresco periódico. El módulo **solo consume**; la escritura la hace la web.
+- Cada fix aceptado se evalúa contra las geovallas activas por point-in-polygon (ray
+  casting); al cruzar un borde se emite `geovalla`. El primer fix reporta solo `enter`.
+- Notificación heads-up al entrar (canal `geovalla_events`, sonido
+  `res/raw/location.mp3`), controlable desde JS.
+
+---
+
+## Pruebas
+
+Dos capas de tests, para que un cambio de la superficie TS no rompa el contrato
+y un cambio de geovallas no rompa el parsing nativo:
+
+```bash
+# 1) JS/TS (jest + ts-jest): contrato de exports, Provider, hooks y
+#    delegación al módulo nativo (mockeado). Corre en CI sin SDK.
+npm test
+
+# 2) Kotlin/JUnit (lógica nativa pura: geovallas, anillos, FeatureCollection).
+#    Se compilan y corren desde la app que consume el módulo:
+cd <tu-app-expo> && ./gradlew :isync-background-tracker:testDebugUnitTest
+```
+
+## Pruebas (dev build)
+
+Como es un módulo de código nativo, se compila e instala con un dev build:
+
+```bash
+# En la app que consume el módulo
+npx expo run:android
+```
+
+Requisitos: JDK 17+, `ANDROID_HOME` definido, y un emulador **con Google APIs** o un
+dispositivo físico. Para probar el tracking es necesario GPS en alta precisión.
+
+Ver los logs del módulo:
+
+```bash
+adb logcat -s IsyncBgLocation -v time
+```
+
+---
+
+## Limitaciones
+
+- **Solo Android** (no iOS, no web).
+- La geofence de reposo con proceso muerto (`GeofencingClient`) fue removida: con el
+  proceso cerrado y el dispositivo quieto, solo el sensor de movimiento significativo
+  (IMM) puede reactivar el tracking — ver `docs/ENGINEERING.md`.
+
+## Licencia
+
+MIT © 2026 iSync

@@ -13,7 +13,9 @@
   ],
   "scripts": {
     "build": "tsc --emitDeclarationOnly false",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "keywords": [
     "react-native",
@@ -38,7 +40,14 @@
     "react-native": "*"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.6.2",
     "@types/react": "~18.2.0",
+    "@types/react-test-renderer": "^19.3.0",
+    "jest": "^30.5.2",
+    "react": "^18.2.0",
+    "react-test-renderer": "^18.2.0",
+    "ts-jest": "^29.4.13",
     "typescript": "^5.3.0"
   }
 }

@@ -34,6 +34,15 @@ dependencies {
   // Drenado durable del batch: cola única con constraint de red y backoff
   // exponencial. Sobrevive al kill del proceso y al reboot.
   implementation 'androidx.work:work-runtime-ktx:2.9.1'
+
+  // Unit tests (JVM): los org.json del runtime de Android van en android.jar
+  // como stubs que lanzan "Stub!"; se sombrean con la implementación JVM real.
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'org.json:json:20231013'
+}
+
+testOptions {
+  unitTests.returnDefaultValues = true
 }
 
 protobuf {
