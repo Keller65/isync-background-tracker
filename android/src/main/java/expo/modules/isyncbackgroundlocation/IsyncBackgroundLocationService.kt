@@ -743,8 +743,18 @@ class IsyncBackgroundLocationService : Service() {
     }
 
     fun motionSnapshot(): Map<String, Any?> {
-      return instance?.get()?.deviceMotionSensor?.snapshot()
-        ?: mapOf("type" to "SignificantMotion", "supported" to false, "armed" to false)
+      // Contrato público `MotionSensorState`: los campos de magnitudes quedan
+      // en 0 porque el diseño actual usa solo Significant Motion (sin
+      // acelerómetro/giroscopio/magnetómetro continuos — ver README).
+      val svc = instance?.get()
+      val sensor = svc?.deviceMotionSensor
+      return mapOf(
+        "registered" to (sensor?.isArmed == true),
+        "moving" to (svc != null && !svc.isStationary),
+        "accelMagnitude" to 0.0,
+        "gyroMagnitude" to 0.0,
+        "magDelta" to 0.0
+      )
     }
   }
 }

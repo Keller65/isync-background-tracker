@@ -55,11 +55,11 @@ export type GeoVallaEvent = {
 };
 
 export type BackgroundLocationStatus = {
-  /** false solo en web: Android e iOS tienen implementación nativa. */
+  /** true en Android, la única plataforma soportada por el módulo. */
   available: boolean;
   /**
-   * true mientras la captura esté activa: el Foreground Service en Android, el
-   * CLLocationManager con updates en background en iOS.
+   * true mientras la captura esté activa: el Foreground Service en Android.
+   * Módulo solo Android.
    */
   isRunning: boolean;
 };

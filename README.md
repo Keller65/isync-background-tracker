@@ -1,5 +1,8 @@
 # iSync Background Location Module
 
+> **Solo Android.** Es un módulo nativo Android (Foreground Service + SQLite WAL
+> + Protobuf). No soporta iOS ni web: `expo-module.config.json` lista `["android"]`.
+
 ## Geovallas (Etapa 3) — `/api/geovallas`
 
 API de geovallas poligonales (RFC 7946; el ciclo la resume `docs/Geovallas.md`).

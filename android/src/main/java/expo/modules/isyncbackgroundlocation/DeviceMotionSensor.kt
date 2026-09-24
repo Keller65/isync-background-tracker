@@ -41,6 +41,10 @@ internal class DeviceMotionSensor {
   var isSupported = false
     private set
 
+  /** true si el trigger está actualmente registrado (armado) en el hardware. */
+  val isArmed: Boolean
+    get() = armed
+
   /** Callback que se dispara una sola vez cuando el hardware detecta movimiento real. */
   var onMotionDetected: (() -> Unit)? = null
 
@@ -105,9 +109,16 @@ internal class DeviceMotionSensor {
     handler = null
   }
 
-  fun snapshot(): Map<String, Any?> = mapOf(
-    "type" to "SignificantMotion",
-    "supported" to isSupported,
-    "armed" to armed
-  )
+  fun snapshot(): Map<String, Any?> {
+    val registered = isSupported && armed
+    return mapOf(
+      "type" to "SignificantMotion",
+      "supported" to isSupported,
+      "armed" to armed,
+      "registered" to registered,
+      "accelMagnitude" to 0.0,
+      "gyroMagnitude" to 0.0,
+      "magDelta" to 0.0
+    )
+  }
 }

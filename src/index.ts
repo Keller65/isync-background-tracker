@@ -1,4 +1,4 @@
-import type { EventSubscription, PermissionResponse } from 'expo-modules-core';
+import type { Subscription, PermissionResponse } from 'expo-modules-core';
 
 import IsyncBackgroundLocationModule from './IsyncBackgroundLocationModule';
 import type {
@@ -27,8 +27,7 @@ export const BackgroundLocation = {
   /**
    * Pide los permisos de ubicación.
    * Android: FINE + COARSE + POST_NOTIFICATIONS (foreground).
-   * iOS: When In Use y luego el ascenso a Always, que es lo que habilita la
-   * captura en segundo plano.
+   * Módulo solo Android: no hay implementación nativa para iOS.
    */
   requestPermissions(): Promise<PermissionResponse> {
     return IsyncBackgroundLocationModule.requestPermissions();
@@ -36,7 +35,7 @@ export const BackgroundLocation = {
 
   /**
    * Arranca el tracking. Persiste en SQLite nativo, sin depender de JS.
-   * Android: Foreground Service. iOS: CLLocationManager en background.
+   * Android: Foreground Service. Módulo solo Android.
    */
   start(options: LocationTrackingOptions = {}): Promise<null> {
     return IsyncBackgroundLocationModule.start(options);
@@ -67,12 +66,12 @@ export const BackgroundLocation = {
   },
 
   /** Evento best-effort para UI en vivo. No es la vía de persistencia — eso es el storage nativo. */
-  addLocationListener(listener: (event: LocationEventPayload) => void): EventSubscription {
+  addLocationListener(listener: (event: LocationEventPayload) => void): Subscription {
     return IsyncBackgroundLocationModule.addListener('location', listener);
   },
 
   /** Transiciones dentro/fuera de las geovallas (etapa 3). Solo fire al cruzar un borde. */
-  addGeoVallasListener(listener: (event: GeoVallaEvent) => void): EventSubscription {
+  addGeoVallasListener(listener: (event: GeoVallaEvent) => void): Subscription {
     return IsyncBackgroundLocationModule.addListener('geovalla', listener);
   },
 

@@ -1,8 +1,5 @@
 {
-  "platforms": ["apple", "android", "web"],
-  "apple": {
-    "modules": ["IsyncBackgroundLocationModule"]
-  },
+  "platforms": ["android"],
   "android": {
     "modules": ["expo.modules.isyncbackgroundlocation.IsyncBackgroundLocationModule"]
   }

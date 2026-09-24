@@ -68,8 +68,8 @@ class TrackingDatabase private constructor(context: Context) :
   fun getPending(limit: Int): List<Map<String, Any?>> {
     val out = mutableListOf<Map<String, Any?>>()
     readableDatabase.rawQuery(
-      "SELECT id, clientUuid, latitude, longitude, altitude, speed, accuracy, heading, timestamp " +
-        "FROM $TABLE ORDER BY timestamp ASC LIMIT ?",
+      "SELECT id, clientUuid, latitude, longitude, altitude, speed, accuracy, heading, timestamp, " +
+        "sincronizado, intentos FROM $TABLE ORDER BY timestamp ASC LIMIT ?",
       arrayOf(limit.toString())
     ).use { cursor ->
       while (cursor.moveToNext()) {
@@ -83,7 +83,9 @@ class TrackingDatabase private constructor(context: Context) :
             "speed" to if (cursor.isNull(5)) null else cursor.getDouble(5),
             "accuracy" to if (cursor.isNull(6)) null else cursor.getDouble(6),
             "heading" to if (cursor.isNull(7)) null else cursor.getDouble(7),
-            "timestamp" to cursor.getLong(8)
+            "timestamp" to cursor.getLong(8),
+            "sincronizado" to cursor.getInt(9),
+            "intentos" to cursor.getInt(10)
           )
         )
       }

@@ -1,4 +1,4 @@
-import { requireNativeModule, NativeModule } from 'expo';
+import { requireNativeModule, NativeModule } from 'expo-modules-core';
 import type { PermissionResponse } from 'expo-modules-core';
 
 import type {

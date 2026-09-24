@@ -9,7 +9,7 @@
     "src",
     "build",
     "android",
-    "isync-background-tracker.podspec"
+    "expo-module.config.json"
   ],
   "scripts": {
     "build": "tsc --emitDeclarationOnly false",
@@ -24,6 +24,10 @@
     "sqlite",
     "isync"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/keller65/isync-background-tracker.git"
+  },
   "author": "iSync",
   "license": "MIT",
   "dependencies": {

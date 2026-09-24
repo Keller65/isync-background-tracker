@@ -25,7 +25,7 @@ internal const val EVENT_LOCATION = "location"
 internal const val EVENT_GEOVALLA = "geovalla"
 
 class TrackingOptions : Record {
-  @Field val interval: Long = 2_000
+  @Field val interval: Long = 5_000
 
   @Field val distanceInterval: Float = 1f
 
