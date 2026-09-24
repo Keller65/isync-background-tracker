@@ -1,0 +1,52 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+  id 'com.google.protobuf' version '0.9.4'
+}
+
+group = 'expo.modules.isyncbackgroundlocation'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.isyncbackgroundlocation"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  api 'com.google.android.gms:play-services-location:21.0.1'
+  // Cliente Java de Socket.IO (protocolo v5 = servidor v4, el que corre el
+  // backend). Trae reconexión propia, así que el relay nativo no necesita el
+  // supervisor/backoff a mano que tenía la versión en JS.
+  implementation 'io.socket:socket.io-client:2.1.0'
+  // Runtime de Protobuf para el payload del evento `location`. Variante
+  // "lite": sin reflexión ni descriptores, ~10x menos peso en el APK.
+  implementation 'com.google.protobuf:protobuf-javalite:3.24.0'
+  // Canal de respaldo (batch sync): re-sincroniza los points pendientes vía
+  // HTTP POST /gps/batch. Ya venía transitivo del socket.io-client; se declara
+  // explícito para no depender de la versión que arrastre la transitiva.
+  implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+  // Drenado durable del batch: cola única con constraint de red y backoff
+  // exponencial. Sobrevive al kill del proceso y al reboot.
+  implementation 'androidx.work:work-runtime-ktx:2.9.1'
+}
+
+protobuf {
+  protoc {
+    artifact = 'com.google.protobuf:protoc:3.24.0'
+  }
+  generateProtoTasks {
+    all().each { task ->
+      task.builtins {
+        java {
+          option "lite"
+        }
+      }
+    }
+  }
+}

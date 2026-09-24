@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package expo.modules.isyncbackgroundlocation;
+
+option java_package = "expo.modules.isyncbackgroundlocation";
+option java_outer_classname = "LocationProto";
+
+// Payload del evento `location` del canal de tiempo real (LocationRelay).
+// Contrato compartido con el backend: cualquier cambio aquí tiene que
+// replicarse en el .proto del repo de isync-tracker-ws.
+//
+// Los cuatro campos `optional` lo son a propósito: en proto3 un escalar sin
+// `optional` no tiene field presence, así que un 0 real (parado en el tráfico
+// -> speed = 0) sería indistinguible de "el fix no traía el dato". El JSON que
+// esto reemplaza sí los distinguía mandando null.
+message LocationPoint {
+  string client_uuid = 1;
+  double latitude = 2;
+  double longitude = 3;
+  optional float accuracy = 4;
+  optional double altitude = 5;
+  optional float speed = 6;
+  optional float heading = 7;
+  string device_id = 8;
+  string device_code = 9;
+  string device_name = 10;
+  int64 timestamp = 11;  // epoch ms, mismo formato que la tabla local location_points
+}
+
+// Payload del canal de respaldo (batch sync, HTTP POST /gps/batch).
+// Mismo wire format que el evento `location`, pero agrupado. Máximo 100 puntos
+// por mensaje, ordenados timestamp ASC (viejo -> nuevo).
+message LocationBatch {
+  repeated LocationPoint points = 1;
+}

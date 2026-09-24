@@ -1,0 +1,40 @@
+{
+  "name": "isync-background-tracker",
+  "version": "1.0.0",
+  "description": "High-performance, battery-efficient background tracking module for React Native with SQLite WAL and custom geospatial filters.",
+  "main": "./build/index.js",
+  "types": "./build/index.d.ts",
+  "react-native": "./src/index.ts",
+  "files": [
+    "src",
+    "build",
+    "android",
+    "isync-background-tracker.podspec"
+  ],
+  "scripts": {
+    "build": "tsc --emitDeclarationOnly false",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "react-native",
+    "expo",
+    "background-tracker",
+    "geolocation",
+    "gps",
+    "sqlite",
+    "isync"
+  ],
+  "author": "iSync",
+  "license": "MIT",
+  "dependencies": {
+    "expo-modules-core": "~1.12.0"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  },
+  "devDependencies": {
+    "@types/react": "~18.2.0",
+    "typescript": "^5.3.0"
+  }
+}
