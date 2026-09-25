@@ -16,6 +16,9 @@ android {
   lintOptions {
     abortOnError false
   }
+  testOptions {
+    unitTests.returnDefaultValues = true
+  }
 }
 
 dependencies {
@@ -39,10 +42,6 @@ dependencies {
   // como stubs que lanzan "Stub!"; se sombrean con la implementación JVM real.
   testImplementation 'junit:junit:4.13.2'
   testImplementation 'org.json:json:20231013'
-}
-
-testOptions {
-  unitTests.returnDefaultValues = true
 }
 
 protobuf {

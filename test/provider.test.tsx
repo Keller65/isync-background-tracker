@@ -50,6 +50,8 @@ import {
   usePendingPointCount,
 } from '../src/IsyncLocationProvider';
 
+import { BackgroundLocation } from '../src';
+
 import type {
   GeoVallaEvent,
   LocationEventPayload,
@@ -126,6 +128,19 @@ describe('IsyncLocationProvider', () => {
       renderer = undefined;
     });
     expect(providerGate.isActive()).toBe(false);
+  });
+
+  it('el gate esta activo antes de que un hijo llame getStatus() en su propio effect', async () => {
+    const calls: any[] = [];
+    const Child = () => {
+      React.useEffect(() => {
+        BackgroundLocation.getStatus().then((s) => calls.push(s));
+      }, []);
+      return null;
+    };
+
+    await renderProvider(<Child />, { autoStart: false });
+    expect(calls).toHaveLength(1);
   });
 
   it('con autoStart=true pide permisos, arranca y refresca el estado al montar', async () => {

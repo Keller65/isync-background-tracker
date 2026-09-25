@@ -191,6 +191,42 @@ Hooks disponibles:
 > Nota: el Provider **no detiene** el tracking al desmontarse — es un servicio de
 > segundo plano: `stop()` es siempre explícito.
 
+### Buenas prácticas de integración
+
+Requisitos para no caer en los errores típicos:
+
+1. **El Provider es la raíz de la app.** Envuelve TODO el árbol. Sin él, cualquier
+   llamada a `BackgroundLocation.*` lanza un `Error` explicativo.
+2. **Los hooks de arranque viven DENTRO del Provider.** Si tu app tiene un init
+   automático (pedir permisos / `getStatus()` / `start()` al abrir), hazlo en un
+   componente **hijo** del Provider:
+   ```tsx
+   function AppInit() {
+     usePermissions(); // o tu lógica equivalente
+     startOnLaunchIfNeeded();
+     return null;
+   }
+
+   export default function App() {
+     return (
+       <IsyncLocationProvider>
+         <AppInit />   {/* hijo → corre después de que el Provider ya está activo */}
+         <Root />
+       </IsyncLocationProvider>
+     );
+   }
+   ```
+   ❌ **No** llames `getStatus()`/`start()` desde hooks del mismo componente que
+   monta el Provider de forma condicional (p. ej. `if (!ready) return null`): su
+   efecto corre en el primer commit, cuando el Provider aún no existe.
+3. **Instalación:** desde el registry o GitHub (`npm install isync-background-tracker`)
+   no requiere ninguna config de Metro. El único caso que necesita atención es apuntar
+   a la carpeta del repo en desarrollo (`npm install D:\isync-background-tracker`):
+   ahí Metro puede resolver `react` desde el `node_modules` del repo y hacer falta
+   un `metro.config.js` que fuerce `react`/`react-native` al de la app, o instalar el
+   tarball (`npm pack` + `npm install isync-background-tracker-1.0.0.tgz`).
+4. **Necesitas dev build** (`npx expo run:android`); no sirve Expo Go.
+
 ---
 
 ## API

@@ -220,9 +220,14 @@ export function IsyncLocationProvider({
     [refreshPendingCount, fail],
   );
 
-  useEffect(() => {
+  const exitGate = useMemo(() => {
     providerGate.enter();
+    return () => providerGate.exit();
+  }, []);
 
+  useEffect(() => exitGate, [exitGate]);
+
+  useEffect(() => {
     const subs: Subscription[] = [];
     try {
       subs.push(
@@ -241,7 +246,6 @@ export function IsyncLocationProvider({
       fail(e);
     }
     return () => {
-      providerGate.exit();
       subs.forEach((sub) => sub.remove());
     };
   }, [fail]);
